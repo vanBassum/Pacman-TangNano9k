@@ -1,121 +1,104 @@
-/* top.sv - pacman on tang nano 9k toplevel */
+module TOP
+(
+    input			Reset_Button,
+    input           User_Button,
+    input           XTAL_IN,
 
-// enable for 16:9 (1024*576) instead of 4:3 (768*576) video
-`define WIDE
+    input btn_up,
+    input btn_down,
+    input btn_left,
+    input btn_right,
+    input btn_coin,
+    input btn_start,
 
-module top(
-  input clk,
+    output  [5:0]   LED,
 
-  input resetn,
-  input user,
+    output			LCD_CLK,
+    output			LCD_HYNC,
+    output			LCD_SYNC,
+    output			LCD_DEN,
+    output	[4:0]	LCD_R,
+    output	[5:0]	LCD_G,
+    output	[4:0]	LCD_B,
 
-  input btn_up,
-  input btn_down,
-  input btn_left,
-  input btn_right,
-  input btn_coin,
-  input btn_start,
-
-  output       tmds_clk_n,
-  output       tmds_clk_p,
-  output [2:0] tmds_d_n,
-  output [2:0] tmds_d_p
+    output          PWM_AUDIO_PIN  // PWM audio output pin
 );
 
-`ifdef WIDE
-// 1024x576p@60hz: 240.7 MHz HDMI clock
-// actual hdmi clock = 239.14 MHz
-// actual pixel clock = 47.828 MHz
-// 47828000 / 48000 / 2 - 1 = 497
-`define PLL pll_240m 
-`define AUDIO_DIVISOR 9'd497
-`define VIDEO_WIDE 1
-`define PIXEL_CLOCK 47828000
-`else
+
+
 // 768x576p@60hz:  174.8 MHz HDMI clock, actual pixel clock = 34.8 MHz
 // actual hdmi clock = 174 MHz
 // actual pixel clock = 34.8 MHz
 // 34800000 / 48000 / 2 - 1 = 361
-`define PLL pll_174m 
-`define AUDIO_DIVISOR 9'd361
+
+//`define PLL pll_174m 
 `define VIDEO_WIDE 0
-`define PIXEL_CLOCK  34800000
-`endif
+`define AUDIO_DIVISOR 9'd346
+`define PIXEL_CLOCK  33330000
 
-wire [2:0] tmds;
-wire tmds_clock;
 
-wire clk_pixel;
-wire clk_pixel_x5;
+	wire		CLK_SYS;
+	wire		CLK_PIX;
+    wire        oscout_o;
 
-wire sys_resetn;
-
-`PLL pll_inst (
-        .clkout(clk_pixel_x5), //output clkout
-        .lock(pll_lock),
-        .clkin(clk)
+    Gowin_rPLL chip_pll
+    (
+        .clkout(CLK_SYS), //output clkout      //200M
+        .clkoutd(CLK_PIX), //output clkoutd   //33.33M
+        .clkin(XTAL_IN), //input clkin
+        .lock(pll_lock)
     );
 
-Gowin_CLKDIV clk_div_5 (
-        .clkout(clk_pixel),    // output clkout
-        .hclkin(clk_pixel_x5), // input hclkin
-        .resetn(pll_lock)      // input resetn
-    );
 
-// generate 48khz audio clock
-reg clk_audio;
-reg [8:0] aclk_cnt;
-always @(posedge clk_pixel) begin
-    // divisor = pixel clock / 48000 / 2 - 1
-    if(aclk_cnt < `AUDIO_DIVISOR)
-        aclk_cnt <= aclk_cnt + 9'd1;
-    else begin
-        aclk_cnt <= 9'd0;
-        clk_audio <= ~clk_audio;
-    end
-end
+	VGAMod	D1
+	(
+		.CLK		(	CLK_SYS     ),
+		.nRST		(	sys_resetn),
 
-/* -------------------- HDMI video and audio -------------------- */
+		.PixelClk	(	CLK_PIX		),
+		.LCD_DE		(	LCD_DEN	 	),
+		.LCD_HSYNC	(	LCD_HYNC 	),
+    	.LCD_VSYNC	(	LCD_SYNC 	),
 
-// differential output
-ELVDS_OBUF tmds_bufds [3:0] (
-        .I({tmds_clock, tmds}),
-        .O({tmds_clk_p, tmds_d_p}),
-        .OB({tmds_clk_n, tmds_d_n})
-);
+		.LCD_B		(	LCD_B		),
+		.LCD_G		(	LCD_G		),
+		.LCD_R		(	LCD_R		),
+        .rgb        (rgb),
+        .x_pos  (cx),   
+        .y_pos  (cy)  
+	);
 
-logic [23:0] rgb;                // rgb color signal
-logic [10:0] cx;                 // horizontal pixel counter
-logic [9:0]  cy;                 // vertical pixel counter
-reg [9:0] audio_out_register;    // register holding the single pacman audio channel
+	assign		LCD_CLK		=	CLK_PIX;
 
-hdmi #(.VIDEO_ID_CODE(65), .VIDEO_WIDE(`VIDEO_WIDE), .VIDEO_REFRESH_RATE(60),
-    .AUDIO_RATE(48000), .AUDIO_BIT_WIDTH(16),
-    .VENDOR_NAME( { "MiST", 32'd0} ),
-    .PRODUCT_DESCRIPTION( {"Pacman Arcade", 24'd0} )
-) hdmi(
-  .clk_pixel_x5(clk_pixel_x5),
-  .clk_pixel(clk_pixel),
-  .clk_audio(clk_audio),
-  .reset(!sys_resetn),
-  .rgb(rgb),
-  .audio_sample_word( {{ 6'h00, audio_out_register }, { 6'h00, audio_out_register }} ),
-  .tmds(tmds),
-  .tmds_clock(tmds_clock),
-  .cx(cx),
-  .cy(cy)
-);
+/* -------------------- Timing -------------------- */
+
+assign clk_pixel = CLK_PIX;
 
 wire [7:0] cpu_dout;
 wire [15:0] addr;
 wire rd_n, wr_n;
 wire cpu_en, mem_en;
 
+wire [23:0] rgb;                // rgb color signal
+wire [11:0] cx;                 // horizontal pixel counter
+wire [10:0] cy;                 // vertical pixel counter
+
+
 timing timing_i (
     .clk(clk_pixel),
     .reset_n(sys_resetn),
     .cpu_en(cpu_en),
     .mem_en(mem_en)
+);
+/* -------------------- audio -------------------- */
+reg [9:0] audio_out_register;         // Register holding the single Pacman audio channel
+
+// Sigma-Delta Encoder Instance
+dsa_single uut (
+    .clk(clk_pixel),                   
+    .rst_n(sys_resetn),            
+    .din(audio_out_register), 
+    .dout(PWM_AUDIO_PIN)      
 );
 
 /* -------------------- 4 * 4k main CPU ROM -------------------- */
@@ -291,6 +274,9 @@ always @(posedge clk_pixel) begin
     end
 end
 
+
+assign LED = {volume, 2'b00};
+
 /* -------------------- interrupt handling -------------------- */
 wire vbi;
 reg int_n, int_en;
@@ -327,6 +313,7 @@ always @(posedge clk_pixel) begin
     end
 end
 
+
 /* -------------------- Z80 CPU -------------------- */
 T80sed t80sed (
     .CLK_n(clk_pixel),   
@@ -350,7 +337,7 @@ T80sed t80sed (
 
 Reset_Sync u_Reset_Sync (
   .resetn(sys_resetn),
-  .ext_reset(resetn & pll_lock),
+  .ext_reset(Reset_Button & pll_lock),
   .clk(clk_pixel)
 );
 
@@ -430,5 +417,104 @@ module Reset_Sync (
  end
  
  assign resetn = &reset_cnt;
+
+endmodule
+
+
+
+module dsa_single #(
+	parameter dac_bw = 10
+)(
+
+	input	wire				clk,
+	input	wire				rst_n,
+	input	wire	[9 : 0]	din,
+	output	wire				dout
+);
+	
+	localparam bw_ext = 2;
+	localparam bw_tot = dac_bw + bw_ext;
+	
+	reg						dout_r;
+	reg						dac_dout;
+	
+	reg signed		[bw_tot-1 : 0]	DAC_acc_1st;
+	
+	wire signed		[bw_tot-1 : 0]	max_val = (2**(dac_bw - 1) - 1);
+	wire signed		[bw_tot-1 : 0]	min_val = -(2**(dac_bw - 1));
+	wire signed		[bw_tot-1 : 0]	dac_val = (!dout_r) ? max_val : min_val;
+	
+	wire signed		[bw_tot-1 : 0]	in_ext = {{bw_ext{din[dac_bw - 1]}}, din};
+	wire signed		[bw_tot-1 : 0]	delta_s0_c0 = in_ext + dac_val;
+	wire signed		[bw_tot-1 : 0]	delta_s0_c1 = DAC_acc_1st + delta_s0_c0;
+
+	always@(posedge clk)begin
+		if(!rst_n)begin
+			DAC_acc_1st <= 'd0;
+		end else begin
+			DAC_acc_1st <= delta_s0_c1;
+		end
+	end
+	
+	always@(posedge clk)begin
+		if(!rst_n)begin
+			dout_r		<= 1'b0;
+			dac_dout	<= 1'b0;
+		end else begin
+			dout_r		<= delta_s0_c1[bw_tot-1];
+			dac_dout	<= ~dout_r;
+		end
+	end
+	
+	assign dout = dout_r;
+	
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+module SigmaDeltaEncoder (
+    input wire clk,                    // Clock signal
+    input wire reset,                  // Reset signal
+    input wire [9:0] input_val,        // 10-bit input value
+    output reg output_bit              // Single-bit output
+);
+
+    // Internal registers
+    reg [10:0] integrator;             // Accumulator (11 bits to handle overflow)
+    reg [10:0] feedback;               // Feedback value
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            integrator <= 11'b0;
+            feedback   <= 11'b0;
+            output_bit <= 1'b0;
+        end else begin
+            // Update the integrator with input minus feedback
+            integrator <= integrator + input_val - feedback;
+
+            // Determine the output bit
+            if (integrator >= 11'd512) begin
+                output_bit <= 1'b1;
+                feedback <= 11'd1023;  // Max value for 10-bit input
+            end else begin
+                output_bit <= 1'b0;
+                feedback <= 11'd0;
+            end
+        end
+    end
 
 endmodule
