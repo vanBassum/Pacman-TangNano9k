@@ -88,7 +88,7 @@ module VGAMod
             y_pos <= 10'b0;
         end else begin
             x_pos <= (pixel_count - H_BACK_PORCH);
-            y_pos <= (line_count - V_BACK_PORCH) * 2;
+            y_pos <= (line_count - V_BACK_PORCH) + 56;
         end
     end
 

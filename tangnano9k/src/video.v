@@ -279,7 +279,7 @@ module video #(
 		end else begin
             vbi <= 1'b0;
 
-            if (x == 0 && y == 576)
+            if (x == 0 && y == 536)
                 vbi <= 1'b1;  // trigger vertical blank interrupt
 
             // default background dark blue
@@ -287,50 +287,19 @@ module video #(
             if(y[0]) b = 64;
             else     b = 32;
 
-`ifdef DEBUG
-            if(x >= XSTART+448+16 && x < XSTART+448+16+128) begin
-                if(sprite_linebuffer[x-(XSTART+448+16)] != 0) begin
-                    b = { bgr233[7:6], 6'b000000 };
-                    g = { bgr233[5:3],  5'b00000 };
-                    r = { bgr233[2:0],  5'b00000 };
-                end else begin
-                    b = x[4]?8'hc0:8'hff;
-                    g = x[4]?8'hc0:8'hff;
-                    r = x[4]?8'hc0:8'hff;
+            if (y < 536) begin
+
+
+                // draw game area
+                // center on screen: 224 * 2 = 448 pixels game area
+                if( x >= XSTART && x < XSTART+10'd448 ) begin
+                        b = { bgr233[7:6], 6'b000000 };
+                        g = { bgr233[5:3],  5'b00000 };
+                        r = { bgr233[2:0],  5'b00000 }; 
                 end
             end
-`endif
-
-            // draw game area
-            // center on screen: 224 * 2 = 448 pixels game area
-            if( x >= XSTART && x < XSTART+10'd448 ) begin
-                if(y[0]) begin
-                    b = { bgr233[7:6], 6'b000000 };
-                    g = { bgr233[5:3],  5'b00000 };
-                    r = { bgr233[2:0],  5'b00000 }; 
-                end else begin
-                    b = { 1'b0, bgr233[7:6], 5'b00000 };
-                    g = { 1'b0, bgr233[5:3],  4'b0000 };
-                    r = { 1'b0, bgr233[2:0],  4'b0000 }; 
-                end
-            end
-
-`ifdef DEBUG
-            // draw sprite marker
-            for ( i = 0; i < 8; i = i + 1) begin
-                if( x[`XBITS-1:1] >= ((XSTART>>1) + 255 - 16 - spriteram2[2*i] ) &&
-                    x[`XBITS-1:1] <  ((XSTART>>1) + 255 - 16 - spriteram2[2*i] + 16 ) &&
-                    y[`YBITS-1:1] >= (16 + 256 - spriteram2[2*i+1]) &&
-                    y[`YBITS-1:1] <  (16 + 256 - spriteram2[2*i+1] +16 )) begin
-
-                    if( x >= XSTART && x < XSTART+448 ) begin
-                        b = { (i&1)?1'b1:1'b0, bgr233[7:6], 5'b00000 };
-                        g = { (i&2)?1'b1:1'b0, bgr233[5:3],  4'b0000 };
-                        r = { (i&4)?1'b1:1'b0, bgr233[2:0],  4'b0000 };                            
-                    end
-                end
-             end
-`endif
         end
     end
 endmodule
+
+
